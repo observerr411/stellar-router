@@ -17,19 +17,22 @@ use prometheus::{Encoder, Registry, TextEncoder};
 use std::net::SocketAddr;
 use tracing::info;
 
+use crate::cache::ResponseCache;
+
 /// Shared server state.
 #[derive(Clone)]
 struct AppState {
     registry: Registry,
+    cache: ResponseCache,
 }
 
 /// Start the HTTP server and block until it exits.
-pub async fn serve(listen: String, registry: Registry) -> Result<()> {
+pub async fn serve(listen: String, registry: Registry, cache: ResponseCache) -> Result<()> {
     let addr: SocketAddr = listen
         .parse()
         .with_context(|| format!("invalid listen address: {listen}"))?;
 
-    let state = AppState { registry };
+    let state = AppState { registry, cache };
 
     let app = Router::new()
         .route("/metrics", get(metrics_handler))
@@ -52,7 +55,23 @@ pub async fn serve(listen: String, registry: Registry) -> Result<()> {
 // ── Handlers ──────────────────────────────────────────────────────────────────
 
 /// `GET /metrics` — render all registered metrics in Prometheus text format.
+///
+/// Responses are cached for the configured TTL to reduce encoding overhead
+/// on high-frequency Prometheus scrapes.
 async fn metrics_handler(State(state): State<AppState>) -> Response {
+    const CACHE_KEY: &str = "metrics";
+
+    // Cache hit — return immediately
+    if let Some((body, content_type)) = state.cache.get(CACHE_KEY) {
+        return (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, content_type)],
+            body,
+        )
+            .into_response();
+    }
+
+    // Cache miss — encode and store
     let encoder = TextEncoder::new();
     let metric_families = state.registry.gather();
 
@@ -65,9 +84,12 @@ async fn metrics_handler(State(state): State<AppState>) -> Response {
             .into_response();
     }
 
+    let content_type = encoder.format_type().to_string();
+    state.cache.set(CACHE_KEY, buffer.clone(), &content_type);
+
     (
         StatusCode::OK,
-        [(header::CONTENT_TYPE, encoder.format_type())],
+        [(header::CONTENT_TYPE, content_type)],
         buffer,
     )
         .into_response()
@@ -122,7 +144,10 @@ mod tests {
         registry.register(Box::new(gauge.clone())).unwrap();
         gauge.set(42.0);
 
-        let state = AppState { registry };
+        let state = AppState {
+            registry,
+            cache: crate::cache::ResponseCache::new(crate::cache::CacheConfig::default()),
+        };
         Router::new()
             .route("/metrics", get(metrics_handler))
             .route("/health", get(health_handler))
@@ -203,7 +228,10 @@ mod tests {
         registry.register(Box::new(gauge.clone())).unwrap();
         gauge.set(0.0);
 
-        let state = AppState { registry };
+        let state = AppState {
+            registry,
+            cache: crate::cache::ResponseCache::new(crate::cache::CacheConfig::default()),
+        };
         let app = Router::new()
             .route("/ready", get(ready_handler))
             .with_state(state);
@@ -228,7 +256,10 @@ mod tests {
         registry.register(Box::new(gauge.clone())).unwrap();
         gauge.set(1.0);
 
-        let state = AppState { registry };
+        let state = AppState {
+            registry,
+            cache: crate::cache::ResponseCache::new(crate::cache::CacheConfig::default()),
+        };
         let app = Router::new()
             .route("/ready", get(ready_handler))
             .with_state(state);

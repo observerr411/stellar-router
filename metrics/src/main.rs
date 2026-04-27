@@ -26,6 +26,7 @@
 //! | `router_scrape_errors_total` | Counter | `contract` | Number of failed scrape attempts |
 //! | `router_up` | Gauge | — | 1 if the last scrape cycle succeeded |
 
+mod cache;
 mod cli;
 mod collector;
 mod metrics;
@@ -37,6 +38,7 @@ use clap::Parser;
 use tracing::info;
 use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
+use cache::{config_from_env as cache_config_from_env, ResponseCache};
 use cli::Args;
 use collector::Collector;
 use metrics::RouterMetrics;
@@ -70,5 +72,6 @@ async fn main() -> Result<()> {
     });
 
     // ── HTTP server ───────────────────────────────────────────────────────────
-    serve(args.listen, registry).await
+    let cache = ResponseCache::new(cache_config_from_env());
+    serve(args.listen, registry, cache).await
 }
