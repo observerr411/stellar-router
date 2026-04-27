@@ -33,6 +33,9 @@ clap = { version = "4.5.37", features = ["derive", "env"] }
 # Error handling
 anyhow = { version = "1.0.98" }
 
+# Caching
+dashmap = { version = "6.1.0" }
+
 # Time
 tokio-util = { version = "0.7.15" }
 
