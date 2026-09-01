@@ -25,13 +25,17 @@ reqwest = { version = "0.12.15", features = ["json", "rustls-tls"], default-feat
 
 # Logging
 tracing = { version = "0.1.41" }
-tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+uuid = { version = "1.11.0", features = ["v4"] }
 
 # Config / CLI
 clap = { version = "4.5.37", features = ["derive", "env"] }
 
 # Error handling
 anyhow = { version = "1.0.98" }
+
+# Rate limiting
+dashmap = { version = "6.1.0" }
 
 # Time
 tokio-util = { version = "0.7.15" }
